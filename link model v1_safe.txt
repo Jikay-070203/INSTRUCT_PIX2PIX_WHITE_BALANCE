@@ -1,0 +1,1 @@
+https://huggingface.co/hoanguyenthanh07/instruct_pix2pix_safetensors/tree/main

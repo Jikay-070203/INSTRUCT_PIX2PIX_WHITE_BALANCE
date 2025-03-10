@@ -1,0 +1,31 @@
+name: "unet"
+platform: "onnxruntime_onnx"
+max_batch_size: 8
+input [
+  {
+    name: "input"
+    data_type: TYPE_FP32
+    dims: [ 8, 64, 64 ]
+  },
+  {
+    name: "context"
+    data_type: TYPE_FP32
+    dims: [ 4, 64, 64 ]
+  }
+]
+output [
+  {
+    name: "output"
+    data_type: TYPE_FP32
+    dims: [ 4, 64, 64 ]
+  }
+]
+instance_group [
+  {
+    kind: KIND_GPU
+    count: 1
+  }
+]
+model_warmup {
+  batch_size: 8
+}

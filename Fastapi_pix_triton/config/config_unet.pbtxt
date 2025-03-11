@@ -1,0 +1,29 @@
+name: "unet"
+platform: "onnxruntime_onnx"
+max_batch_size: 0  # Không sử dụng batch size động
+
+input [
+  {
+    name: "latents"
+    data_type: TYPE_FP16
+    dims: [-1, 8, 64, 64]
+  },
+  {
+    name: "timestep"
+    data_type: TYPE_FP16
+    dims: [1]
+  },
+  {
+    name: "text_embeddings"
+    data_type: TYPE_FP16
+    dims: [-1, 77, 768]
+  }
+]
+
+output [
+  {
+    name: "predicted_noise"
+    data_type: TYPE_FP16
+    dims: [-1, 4, 64, 64]
+  }
+]

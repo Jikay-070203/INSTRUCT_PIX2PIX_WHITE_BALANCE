@@ -1,3 +1,10 @@
+# from transformers import CLIPTokenizer
+# import os      
+# model_path = r"D:\SourceCode\ProjectOJT\complete\OJT_TASK3_LOCAL\Deploy\WB\fastapi\model_repository\instruct-pix2pix\tokenizer"
+# tokenizer = CLIPTokenizer.from_pretrained(model_path)
+# print("Tokenizer loaded successfully!")
+
+
 from fastapi import FastAPI, File, UploadFile, Form, Response
 import numpy as np
 import io
@@ -6,8 +13,8 @@ import tritonclient.http as httpclient
 from transformers import CLIPTokenizer
 import logging
 from skimage import exposure
-from scipy.ndimage import gaussian_filter, median_filter, uniform_filter
-import os      
+from scipy.ndimage import gaussian_filter, uniform_filter, median_filter
+import os       
 
 app = FastAPI()
 triton_client = httpclient.InferenceServerClient("localhost:8000")
@@ -61,7 +68,7 @@ async def generate_image(file: UploadFile = File(...), prompt: str = Form(...)):
     latent = vae_response.as_numpy("latent").astype(np.float32)
     
     logger.info(f"Latent shape: {latent.shape}, min: {latent.min()}, max: {latent.max()}")
-    
+
     # Gửi dữ liệu vào UNet với timestep=10
     unet_response = triton_client.infer(
         "unet",
@@ -74,13 +81,16 @@ async def generate_image(file: UploadFile = File(...), prompt: str = Form(...)):
     )
     
     denoised_latents = unet_response.as_numpy("predicted_noise").astype(np.float32)
-    
-    # Đảm bảo số kênh phù hợp trước khi đưa vào VAE Decoder
+
+    # **Cải thiện cách xử lý latent trước khi đưa vào VAE Decoder**
     if denoised_latents.shape[1] > 4:
         denoised_latents = denoised_latents[:, :4, :, :]
+
+    # **Làm mượt latent để tránh noise quá mức**
+    denoised_latents = gaussian_filter(denoised_latents, sigma=0.5)
     
     logger.info(f"Denoised latent shape: {denoised_latents.shape}, min: {denoised_latents.min()}, max: {denoised_latents.max()}")
-    
+
     # Decode latent space thành ảnh
     vae_dec_response = triton_client.infer(
         "vae_decoder",
@@ -91,15 +101,16 @@ async def generate_image(file: UploadFile = File(...), prompt: str = Form(...)):
     generated_image = vae_dec_response.as_numpy("image")[0]
     final_image = np.clip((generated_image + 1) / 2 * 255, 0, 255).astype(np.uint8)
     final_image = np.transpose(final_image, (1, 2, 0))
-    
-    # Hậu xử lý ảnh để tăng độ nét và giảm nhiễu
-    final_image = exposure.adjust_gamma(final_image, gamma=0.85)  # Giữ sáng tự nhiên
-    final_image = exposure.adjust_sigmoid(final_image, cutoff=0.5, gain=2.5)  # Cải thiện chi tiết
-    final_image = gaussian_filter(final_image, sigma=0.8)  # Làm mượt nhẹ
-    final_image = uniform_filter(final_image, size=1)  # Loại bỏ nhiễu nhỏ
-    
+
+    # **Cải thiện hậu xử lý ảnh**
+    final_image = exposure.adjust_gamma(final_image, gamma=0.90)  # Điều chỉnh sáng nhẹ
+    final_image = exposure.adjust_sigmoid(final_image, cutoff=0.5, gain=3.0)  # Tăng độ tương phản
+    final_image = gaussian_filter(final_image, sigma=0.5)  # Giảm noise nhẹ
+    final_image = median_filter(final_image, size=1)  # Giảm hạt nhiễu cục bộ
+    final_image = uniform_filter(final_image, size=2)  # Làm mượt nhẹ để ảnh tự nhiên hơn
+
     # Xuất ảnh
-    pil_img = Image.fromarray((final_image * 255).astype(np.uint8))
+    pil_img = Image.fromarray(final_image)
     img_io = io.BytesIO()
     pil_img.save(img_io, format="PNG")
     img_io.seek(0)

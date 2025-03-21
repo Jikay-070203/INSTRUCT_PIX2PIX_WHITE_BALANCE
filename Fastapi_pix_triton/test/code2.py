@@ -1,3 +1,4 @@
+########load denoising
 from fastapi import FastAPI, File, UploadFile, Form, Response
 import numpy as np
 import io
@@ -6,13 +7,11 @@ import tritonclient.http as httpclient
 from transformers import CLIPTokenizer
 import logging
 from skimage import exposure
-from scipy.ndimage import gaussian_filter, median_filter, uniform_filter
-import os      
+from scipy.ndimage import gaussian_filter, uniform_filter
 
 app = FastAPI()
 triton_client = httpclient.InferenceServerClient("localhost:8000")
-model_path = r"D:\SourceCode\ProjectOJT\complete\OJT_TASK3_LOCAL\Deploy\WB\fastapi\model_repository\instruct-pix2pix\tokenizer"
-tokenizer = CLIPTokenizer.from_pretrained(model_path)
+tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO)
@@ -59,32 +58,44 @@ async def generate_image(file: UploadFile = File(...), prompt: str = Form(...)):
         outputs=[httpclient.InferRequestedOutput("latent")]
     )
     latent = vae_response.as_numpy("latent").astype(np.float32)
-    
-    logger.info(f"Latent shape: {latent.shape}, min: {latent.min()}, max: {latent.max()}")
-    
-    # Gửi dữ liệu vào UNet với timestep=10
-    unet_response = triton_client.infer(
-        "unet",
-        inputs=[
-            httpclient.InferInput("latents", latent.shape, "FP16").set_data_from_numpy(latent.astype(np.float16)),
-            httpclient.InferInput("timestep", (1,), "FP16").set_data_from_numpy(np.array([10], dtype=np.float16)),
-            httpclient.InferInput("text_embeddings", text_embedding.shape, "FP16").set_data_from_numpy(text_embedding.astype(np.float16))
-        ],
-        outputs=[httpclient.InferRequestedOutput("predicted_noise")]
-    )
-    
-    denoised_latents = unet_response.as_numpy("predicted_noise").astype(np.float32)
-    
-    # Đảm bảo số kênh phù hợp trước khi đưa vào VAE Decoder
-    if denoised_latents.shape[1] > 4:
-        denoised_latents = denoised_latents[:, :4, :, :]
-    
-    logger.info(f"Denoised latent shape: {denoised_latents.shape}, min: {denoised_latents.min()}, max: {denoised_latents.max()}")
+
+    logger.info(f"Latent shape from VAE Encoder: {latent.shape}")
+
+    # **Vòng lặp denoising**
+    num_inference_steps = 10 # Số bước khử nhiễu
+    for step in range(num_inference_steps):
+        timestep = np.array([1000 - step * (1000 // num_inference_steps)], dtype=np.float32)  # Thời gian bước giảm dần
+
+        unet_response = triton_client.infer(
+            "unet",
+            inputs=[
+                httpclient.InferInput("latents", latent.shape, "FP16").set_data_from_numpy(latent.astype(np.float16)),
+                httpclient.InferInput("timestep", (1,), "FP16").set_data_from_numpy(timestep.astype(np.float16)),
+                httpclient.InferInput("text_embeddings", text_embedding.shape, "FP16").set_data_from_numpy(text_embedding.astype(np.float16))
+            ],
+            outputs=[httpclient.InferRequestedOutput("predicted_noise")]
+        )
+        
+        predicted_noise = unet_response.as_numpy("predicted_noise").astype(np.float32)
+
+        # **🔴 Xử lý lỗi số kênh không khớp giữa latent và predicted_noise**
+        if predicted_noise.shape[1] == 4 and latent.shape[1] == 8:
+            predicted_noise = np.concatenate([predicted_noise, predicted_noise], axis=1)
+
+        logger.info(f"Predicted noise shape: {predicted_noise.shape}")
+
+        # Cập nhật latent
+        latent = latent - (predicted_noise * (1 / num_inference_steps))
+
+    logger.info(f"Denoised latent shape: {latent.shape}, min: {latent.min()}, max: {latent.max()}")
+
+    # **Chỉ lấy 4 kênh đầu tiên trước khi đưa vào VAE Decoder**
+    latent = latent[:, :4, :, :]
     
     # Decode latent space thành ảnh
     vae_dec_response = triton_client.infer(
         "vae_decoder",
-        inputs=[httpclient.InferInput("latent", denoised_latents.shape, "FP32").set_data_from_numpy(denoised_latents)],
+        inputs=[httpclient.InferInput("latent", latent.shape, "FP32").set_data_from_numpy(latent)],
         outputs=[httpclient.InferRequestedOutput("image")]
     )
     

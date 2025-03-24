@@ -1,0 +1,8 @@
+fastapi==0.115.8
+uvicorn==0.34.0
+diffusers==0.32.2
+transformers==4.50.0
+accelerate==1.4.0
+Pillow==11.1.0
+tritonclient==2.54.0
+python-multipart==0.0.20

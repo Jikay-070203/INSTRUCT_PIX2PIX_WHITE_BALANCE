@@ -18,7 +18,7 @@ FastAPI-based inference server for **InstructPix2Pix** using ONNX models deploye
 <pre>
 .
 ├── app/                    # FastAPI app source code
-│   ├── main.py             # API Endpoint
+│   ├── app.py             # API Endpoint
 │   └── triton_clients/     # Triton gRPC clients: vae_encoder, unet, vae_decoder
 ├── Dockerfile              # Docker build config
 ├── docker-compose.yml      # Multi-container deployment (CPU/GPU)

@@ -23,6 +23,10 @@ FastAPI-based inference server for **InstructPix2Pix** using ONNX models deploye
 ├── Dockerfile              # Docker build config
 ├── docker-compose.yml      # Multi-container deployment (CPU/GPU)
 ├── requirements.txt        # Python dependencies
+│   ├── triton_clients/     # Triton gRPC or HTTP clients for model inference
+│   │   ├── vae_encoder_client.py   # VAE Encoder client
+│   │   ├── vae_decoder_client.py   # VAE Decoder client
+│   │   ├── unet_client.py          # UNet client
 ├── charts/                 # Helm chart for Kubernetes deployment
 │   └── instructpix2pix/
 │       ├── Chart.yaml
